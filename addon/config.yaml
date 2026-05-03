@@ -1,5 +1,5 @@
 name: HA Expert
-version: "0.1.7"
+version: "0.1.8"
 slug: ha_expert
 description: Bezpieczne narzędzie do zdalnego wsparcia i konfiguracji Twojego Home Assistant.
 url: https://ha-expert.com

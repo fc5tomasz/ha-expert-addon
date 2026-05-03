@@ -31,4 +31,4 @@
 
 ## Wersja
 
-Aktualna wersja repo: `0.1.7`
+Aktualna wersja repo: `0.1.8`

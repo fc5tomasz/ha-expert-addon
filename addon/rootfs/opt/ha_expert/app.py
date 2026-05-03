@@ -44,6 +44,7 @@ HOME_ASSISTANT_LOG_DIR = Path("/homeassistant")
 DEFAULT_HA_LOG_LINES = 180
 SUPERVISOR_URL = os.environ.get("SUPERVISOR_URL", "http://supervisor").rstrip("/")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "").strip()
+ALLOWED_LOG_SEVERITIES = {"all", "warning", "error", "critical"}
 
 
 class TailscaleAdapter:
@@ -241,19 +242,39 @@ def _read_ha_log_tail_via_supervisor(lines: int = DEFAULT_HA_LOG_LINES) -> dict[
     }
 
 
-def _read_ha_log_tail(lines: int = DEFAULT_HA_LOG_LINES) -> dict[str, Any]:
+def _filter_log_text(text: str, severity: str) -> str:
+    severity = severity.strip().lower() or "all"
+    if severity not in ALLOWED_LOG_SEVERITIES or severity == "all":
+        return text
+
+    marker_map = {
+        "warning": " WARNING ",
+        "error": " ERROR ",
+        "critical": " CRITICAL ",
+    }
+    marker = marker_map[severity]
+    selected = [line for line in text.splitlines() if marker in line]
+    return "\n".join(selected)
+
+
+def _read_ha_log_tail(lines: int = DEFAULT_HA_LOG_LINES, severity: str = "all") -> dict[str, Any]:
     lines = max(20, min(lines, 500))
     try:
-        return _read_ha_log_tail_via_supervisor(lines)
+        result = _read_ha_log_tail_via_supervisor(lines)
     except Exception:
         log_file = _resolve_ha_log_file()
         content = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
         selected = content[-lines:]
-        return {
+        result = {
             "source": str(log_file),
             "lines": lines,
             "text": "\n".join(selected),
         }
+    severity = severity.strip().lower() or "all"
+    filtered = _filter_log_text(str(result.get("text", "")), severity)
+    result["severity"] = severity
+    result["text"] = filtered or "Brak wpisów w wybranej kategorii logów."
+    return result
 
 
 async def _run_operator_job(job: dict[str, Any]) -> None:
@@ -265,7 +286,10 @@ async def _run_operator_job(job: dict[str, Any]) -> None:
 
     try:
         if kind == "ha_log_tail":
-            result = _read_ha_log_tail(int(payload.get("lines", DEFAULT_HA_LOG_LINES) or DEFAULT_HA_LOG_LINES))
+            result = _read_ha_log_tail(
+                int(payload.get("lines", DEFAULT_HA_LOG_LINES) or DEFAULT_HA_LOG_LINES),
+                str(payload.get("severity", "all")),
+            )
         else:
             raise RuntimeError(f"Nieznany typ zadania: {kind}")
         await _operator_post("/api/v1/jobs/result", {"job_id": job_id, "ok": True, "result": result})
