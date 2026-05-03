@@ -45,6 +45,9 @@ DEFAULT_HA_LOG_LINES = 180
 SUPERVISOR_URL = os.environ.get("SUPERVISOR_URL", "http://supervisor").rstrip("/")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "").strip()
 ALLOWED_LOG_SEVERITIES = {"all", "warning", "error", "critical"}
+HA_RELAY_HOST = "127.0.0.1"
+HA_RELAY_PORT = int(os.environ.get("HA_EXPERT_HA_RELAY_PORT", "18123"))
+HA_DASHBOARD_PORT = int(os.environ.get("HA_EXPERT_HA_DASHBOARD_PORT", "18123"))
 
 
 class TailscaleAdapter:
@@ -163,6 +166,7 @@ class TailscaleAdapter:
             return
         try:
             await self.start()
+            self.reset_serve()
             self._run(["tailscale", "--socket", TAILSCALE_SOCKET, "logout"], check=False)
         finally:
             if self._proc and self._proc.poll() is None:
@@ -172,6 +176,65 @@ class TailscaleAdapter:
                 except Exception:
                     self._proc.kill()
             self._proc = None
+
+    def reset_serve(self) -> None:
+        self._run(["tailscale", "--socket", TAILSCALE_SOCKET, "serve", "reset"], check=False)
+
+
+class LocalTcpRelay:
+    def __init__(self) -> None:
+        self._server: asyncio.base_events.Server | None = None
+
+    @staticmethod
+    def _target() -> tuple[str, int]:
+        parsed = urlparse(INTERNAL_HA_URL)
+        host = parsed.hostname or "homeassistant"
+        port = parsed.port or INTERNAL_HA_PORT
+        return host, port
+
+    async def _pipe(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            while True:
+                chunk = await reader.read(65536)
+                if not chunk:
+                    break
+                writer.write(chunk)
+                await writer.drain()
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+    async def _handle_client(self, client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter) -> None:
+        target_host, target_port = self._target()
+        try:
+            target_reader, target_writer = await asyncio.open_connection(target_host, target_port)
+        except Exception:
+            client_writer.close()
+            await client_writer.wait_closed()
+            return
+
+        upstream = asyncio.create_task(self._pipe(client_reader, target_writer))
+        downstream = asyncio.create_task(self._pipe(target_reader, client_writer))
+        done, pending = await asyncio.wait({upstream, downstream}, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*done, return_exceptions=True)
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    async def start(self) -> None:
+        if self._server is not None:
+            return
+        self._server = await asyncio.start_server(self._handle_client, HA_RELAY_HOST, HA_RELAY_PORT)
+
+    async def stop(self) -> None:
+        if self._server is None:
+            return
+        self._server.close()
+        await self._server.wait_closed()
+        self._server = None
 
 
 def _ensure_state_file() -> None:
@@ -185,6 +248,7 @@ def _ensure_state_file() -> None:
                     "connected": False,
                     "tailscale_ip": "",
                     "tailscale_node": "",
+                    "dashboard_url": "",
                     "last_error": "",
                     "last_notice": "",
                 },
@@ -203,6 +267,13 @@ def _read_state() -> dict[str, Any]:
 
 def _write_state(state: dict[str, Any]) -> None:
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _build_dashboard_url(tailscale_ip: str) -> str:
+    tailscale_ip = tailscale_ip.strip()
+    if not tailscale_ip:
+        return ""
+    return f"http://{tailscale_ip}:{HA_DASHBOARD_PORT}/"
 
 
 def _resolve_ha_log_file() -> Path:
@@ -414,10 +485,13 @@ async def connect(request: web.Request) -> web.Response:
     tailscale: TailscaleAdapter = request.app["tailscale"]
     try:
         tailscale_info = await tailscale.connect(client_login)
+        await request.app["ha_relay"].start()
+        tailscale.reset_serve()
     except Exception as exc:
         state["client_login"] = client_login
         state["ha_token"] = ha_token
         state["connected"] = False
+        state["dashboard_url"] = ""
         state["last_error"] = str(exc).strip() or "Nie udało się połączyć z Tailscale."
         state["last_notice"] = ""
         _write_state(state)
@@ -430,6 +504,7 @@ async def connect(request: web.Request) -> web.Response:
             "connected": tailscale_info.get("connected") == "true",
             "tailscale_ip": tailscale_info.get("tailscale_ip", ""),
             "tailscale_node": tailscale_info.get("tailscale_node", ""),
+            "dashboard_url": _build_dashboard_url(tailscale_info.get("tailscale_ip", "")),
             "last_error": "",
             "last_notice": tailscale.last_connect_warning,
         }
@@ -442,6 +517,7 @@ async def connect(request: web.Request) -> web.Response:
         "ha_port": INTERNAL_HA_PORT,
         "tailscale_ip": state.get("tailscale_ip", ""),
         "tailscale_node": state.get("tailscale_node", ""),
+        "dashboard_url": state.get("dashboard_url", ""),
     }
     try:
         await _operator_post("/api/v1/connect", operator_payload)
@@ -449,8 +525,10 @@ async def connect(request: web.Request) -> web.Response:
         state["connected"] = False
         state["tailscale_ip"] = ""
         state["tailscale_node"] = ""
+        state["dashboard_url"] = ""
         state["last_error"] = exc.text or "Nie udało się zarejestrować połączenia."
         _write_state(state)
+        await request.app["ha_relay"].stop()
         await tailscale.disconnect()
         return web.json_response({"ok": False, "error": state["last_error"]}, status=502)
 
@@ -482,9 +560,11 @@ async def disconnect(request: web.Request) -> web.Response:
         pass
 
     await request.app["tailscale"].disconnect()
+    await request.app["ha_relay"].stop()
     state["connected"] = False
     state["tailscale_ip"] = ""
     state["tailscale_node"] = ""
+    state["dashboard_url"] = ""
     state["last_error"] = ""
     state["last_notice"] = ""
     _write_state(state)
@@ -502,9 +582,11 @@ async def _heartbeat_loop(app: web.Application) -> None:
             state["tailscale_ip"] = tailscale_info.get("tailscale_ip", "")
             state["tailscale_node"] = tailscale_info.get("tailscale_node", "")
             state["connected"] = tailscale_info.get("connected") == "true"
+            state["dashboard_url"] = _build_dashboard_url(state.get("tailscale_ip", ""))
             state["last_error"] = ""
             if not state.get("connected"):
                 state["last_notice"] = ""
+                state["dashboard_url"] = ""
             _write_state(state)
             await _operator_post(
                 "/api/v1/heartbeat",
@@ -512,6 +594,7 @@ async def _heartbeat_loop(app: web.Application) -> None:
                     "client_login": state.get("client_login", ""),
                     "tailscale_ip": state.get("tailscale_ip", ""),
                     "tailscale_node": state.get("tailscale_node", ""),
+                    "dashboard_url": state.get("dashboard_url", ""),
                 },
             )
             poll_payload = await _operator_post("/api/v1/poll", {"client_login": state.get("client_login", "")})
@@ -547,12 +630,16 @@ async def on_startup(app: web.Application) -> None:
             state["tailscale_ip"] = tailscale_info.get("tailscale_ip", "")
             state["tailscale_node"] = tailscale_info.get("tailscale_node", "")
             state["connected"] = tailscale_info.get("connected") == "true"
+            state["dashboard_url"] = _build_dashboard_url(state.get("tailscale_ip", ""))
             _write_state(state)
         except Exception:
             state["connected"] = False
+            state["dashboard_url"] = ""
             _write_state(state)
         if state.get("connected"):
             state["last_error"] = ""
+            await app["ha_relay"].start()
+            app["tailscale"].reset_serve()
             _write_state(state)
             app["runtime"]["heartbeat_task"] = asyncio.create_task(_heartbeat_loop(app))
 
@@ -569,12 +656,14 @@ async def on_cleanup(app: web.Application) -> None:
             await _operator_post("/api/v1/disconnect", {"client_login": client_login})
         except web.HTTPException:
             pass
+    await app["ha_relay"].stop()
     await app["tailscale"].disconnect()
 
 
 def create_app() -> web.Application:
     app = web.Application()
     app["tailscale"] = TailscaleAdapter()
+    app["ha_relay"] = LocalTcpRelay()
     app["runtime"] = {"heartbeat_task": None}
     app.router.add_get("/", index)
     app.router.add_get("/api/status", status)
