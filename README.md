@@ -12,6 +12,21 @@
   - zobaczyć status klienta
   - zobaczyć adres HA i port
   - pobrać log Home Assistant przez samo urządzenie
+  - uruchamiać bezpieczne operacje runtime przez `hx`
+
+## Runtime HA Expert
+
+Wersja `0.2.0` zachowuje dotychczasowy model połączenia i dodaje runtime po stronie HA klienta:
+
+- `client_login` identyfikuje klienta i jest wysyłany do operatora
+- `ha_token` jest używany lokalnie przez add-on do API Home Assistant
+- add-on nadal zestawia Tailscale i heartbeat do operatora tak jak wcześniej
+- nazwa, slug i panel dodatku pozostają bez zmian:
+  - `HA Expert`
+  - `ha_expert`
+  - panel `HA Expert`
+- runtime obsługuje diagnostykę, logi, historię, logbook, YAML automatyzacji/skryptów, dry-run, backup, rollback i `core-check`
+- realne zmiany YAML wymagają jawnego potwierdzenia po stronie operatora
 
 ## Instalacja
 
@@ -28,7 +43,16 @@
 - Dodatek korzysta z Tailscale w tle i nie wymaga ręcznej konfiguracji VPN po stronie klienta.
 - Panel klienta pokazuje tylko stan połączenia i przycisk `Połącz z ekspertem` / `Rozłącz`.
 - Narzędzie jest niezależne od starszego `Ha-expert-Client`.
+- Operacje eksperckie są sterowane po stronie operatora przez `hx`, panel klienta pozostaje prosty.
+
+## Testy
+
+Lekkie testy bezpieczeństwa runtime można uruchomić bez Home Assistant:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 
 ## Wersja
 
-Aktualna wersja repo: `0.1.10`
+Aktualna wersja repo: `0.2.0`
