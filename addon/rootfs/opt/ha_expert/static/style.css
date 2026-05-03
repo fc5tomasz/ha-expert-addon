@@ -1,0 +1,198 @@
+:root {
+  --bg: #10161d;
+  --text: #edf3fb;
+  --muted: #9eb0c5;
+  --accent: #f29c57;
+  --accent-deep: #ffb87a;
+  --ok: #7fe0a8;
+  --ok-bg: rgba(42, 112, 73, 0.2);
+  --off: #ff8f87;
+  --off-bg: rgba(133, 52, 48, 0.22);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top right, rgba(242, 156, 87, 0.16), transparent 30%),
+    linear-gradient(180deg, #0d1319 0%, var(--bg) 70%);
+}
+
+.shell {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 18px 22px 26px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  align-items: start;
+  column-gap: 18px;
+  margin-bottom: 22px;
+}
+
+.logo-link {
+  display: inline-flex;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.logo {
+  width: 138px;
+  height: auto;
+  display: block;
+  margin: 0;
+}
+
+.hero-copy {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  text-align: left;
+  padding-top: 4px;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.45rem, 2.8vw, 2rem);
+}
+
+.lead {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.lead,
+.footnote {
+  color: var(--muted);
+}
+
+.controls {
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+  margin-left: 168px;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+button {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+button {
+  border: 0;
+  min-width: 220px;
+  padding: 13px 22px;
+  cursor: pointer;
+  background: var(--accent);
+  color: #10161d;
+  box-shadow: 0 10px 24px rgba(242, 156, 87, 0.24);
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--accent-deep);
+  border: 1px solid rgba(255, 184, 122, 0.28);
+  box-shadow: none;
+}
+
+.status-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 220px;
+  min-height: 47px;
+  padding: 13px 22px;
+  border-radius: 999px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.status-text.online {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.status-text.offline {
+  background: var(--off-bg);
+  color: var(--off);
+}
+
+.error {
+  color: var(--off);
+}
+
+@media (max-width: 640px) {
+  .shell {
+    max-width: 460px;
+    padding: 18px 18px 26px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    row-gap: 10px;
+  }
+
+  .logo-link {
+    justify-content: center;
+  }
+
+  .logo {
+    width: min(160px, 56vw);
+    margin: 0 auto;
+  }
+
+  .hero-copy {
+    text-align: center;
+    padding-top: 0;
+  }
+
+  .lead {
+    white-space: normal;
+  }
+
+  .controls {
+    justify-items: center;
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actions {
+    justify-content: center;
+    width: 100%;
+  }
+
+  button {
+    width: 100%;
+  }
+
+  .status-text {
+    width: 100%;
+  }
+}

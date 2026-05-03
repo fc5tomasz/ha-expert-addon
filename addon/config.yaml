@@ -1,0 +1,30 @@
+name: HA Expert
+version: "0.1.7"
+slug: ha_expert
+description: Bezpieczne narzędzie do zdalnego wsparcia i konfiguracji Twojego Home Assistant.
+url: https://ha-expert.com
+startup: services
+boot: auto
+init: false
+panel_icon: mdi:shield-home-outline
+panel_title: HA Expert
+panel_admin: false
+ingress: true
+ingress_port: 8099
+ingress_panel: true
+hassio_api: true
+hassio_role: manager
+arch:
+  - aarch64
+  - amd64
+  - armv7
+  - i386
+map:
+  - type: homeassistant_config
+    read_only: false
+options:
+  client_login: ""
+  ha_token: ""
+schema:
+  client_login: str
+  ha_token: password

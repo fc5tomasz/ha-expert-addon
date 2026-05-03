@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HA Expert</title>
+    <link rel="stylesheet" href="static/style.css?v=018">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <a class="logo-link" href="https://ha-expert.com/" target="_blank" rel="noopener noreferrer" aria-label="Otwórz stronę HA Expert">
+          <img src="static/logo-wyciete.png?v=018" alt="HA Expert" class="logo">
+        </a>
+        <div class="hero-copy">
+          <h1>Połączenie z ekspertem</h1>
+          <p class="lead">Bezpieczny kanał zdalnej pomocy dla Twojego Home Assistant.</p>
+        </div>
+      </section>
+
+      <section class="controls">
+        <div class="action-row">
+          <div class="actions">
+            <button id="connect-button" type="button">Połącz z ekspertem</button>
+            <button id="disconnect-button" type="button" class="secondary" hidden>Rozłącz</button>
+          </div>
+          <span id="status-text" class="status-text">Nie połączono</span>
+        </div>
+
+        <p class="footnote" id="message-box" hidden></p>
+      </section>
+    </main>
+
+    <script>
+      const connectButton = document.getElementById("connect-button");
+      const disconnectButton = document.getElementById("disconnect-button");
+      const statusText = document.getElementById("status-text");
+      const messageBox = document.getElementById("message-box");
+
+      function setStatus(online) {
+        statusText.textContent = online ? "Połączono" : "Nie połączono";
+        statusText.className = `status-text ${online ? "online" : "offline"}`;
+        connectButton.hidden = online;
+        disconnectButton.hidden = !online;
+      }
+
+      function setMessage(text, isError = false) {
+        if (!text) {
+          messageBox.hidden = true;
+          messageBox.textContent = "";
+          messageBox.className = "footnote";
+          return;
+        }
+        messageBox.hidden = false;
+        messageBox.textContent = text;
+        messageBox.className = isError ? "footnote error" : "footnote";
+      }
+
+      async function refreshStatus() {
+        const response = await fetch("api/status");
+        const payload = await response.json();
+        setStatus(Boolean(payload.connected));
+        if (payload.configured === false) {
+          setMessage("Najpierw uzupełnij login klienta i token Live w ustawieniach dodatku.", true);
+          return;
+        }
+        if (payload.last_error) {
+          setMessage(payload.last_error, true);
+          return;
+        }
+        setMessage("");
+      }
+
+      connectButton.addEventListener("click", async () => {
+        setMessage("");
+        const response = await fetch("api/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        const payload = await response.json();
+        if (!payload.ok) {
+          setMessage(payload.error || "Nie udało się połączyć.", true);
+          return;
+        }
+        setStatus(true);
+        setMessage("");
+      });
+
+      disconnectButton.addEventListener("click", async () => {
+        setMessage("");
+        const response = await fetch("api/disconnect", { method: "POST" });
+        const payload = await response.json();
+        if (!payload.ok) {
+          setMessage(payload.error || "Nie udało się rozłączyć.", true);
+          return;
+        }
+        setStatus(false);
+        setMessage("");
+      });
+
+      refreshStatus().catch(() => setMessage("Nie udało się odczytać stanu dodatku.", true));
+    </script>
+  </body>
+</html>
